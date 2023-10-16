@@ -63,10 +63,10 @@ def custom_set_out_dir(cfg, cfg_fname, name_tag):
         name_tag (string): Additional name tag to identify this execution of the
             configuration file, specified in :obj:`cfg.name_tag`
     """
-    run_name = os.path.splitext(os.path.basename(cfg_fname))[0]
-    run_name += f"-{name_tag}" if name_tag else ""
-    cfg.out_dir = os.path.join(cfg.out_dir, run_name)
-
+    # run_name = os.path.splitext(os.path.basename(cfg_fname))[0]
+    # run_name += f"-{name_tag}" if name_tag else ""
+    # cfg.out_dir = os.path.join(cfg.out_dir, run_name)
+    cfg.out_dir = os.path.join(cfg.out_dir, cfg.name)
 
 def custom_set_run_dir(cfg, run_id):
     """Custom output directory naming for each experiment run.

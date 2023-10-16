@@ -24,6 +24,9 @@ def extended_cfg(cfg):
     """General extended config options.
     """
 
+    # Specific name of the directory inside out_dir
+    cfg.name = 'tpugraphs'
+
     # Additional name tag used in `run_dir` and `wandb_name` auto generation.
     cfg.name_tag = ""
 
