@@ -138,9 +138,9 @@ def preprocess_batch(batch, model, num_sample_configs):
     batch_list = batch.to_data_list()
     processed_batch_list = []
     for g in batch_list:
-        sample_idx = torch.randint(0, g.num_config.item(), (num_sample_configs,))
-        g.y = g.y[sample_idx]
-        g.config_feats = g.config_feats.view(g.num_config, g.num_config_idx, -1)[sample_idx, ...]
+        # sample_idx = torch.randint(0, g.num_config.item(), (num_sample_configs,))
+        # g.y = g.y[sample_idx]
+        g.config_feats = g.config_feats.view(g.num_config, g.num_config_idx, -1)[:, ...]
         g.config_feats = g.config_feats.transpose(0,1)
         g.config_feats_full = torch.zeros((g.num_nodes, num_sample_configs, g.config_feats.shape[-1]), device=g.config_feats.device)
         g.config_feats_full[g.config_idx, ...] += g.config_feats
@@ -148,12 +148,24 @@ def preprocess_batch(batch, model, num_sample_configs):
         processed_batch_list.append(g)
     return Batch.from_data_list(processed_batch_list)
 
+def eval_opa(y_true, y_pred):
+    num_preds = y_pred.shape[0]
+    i_idx = torch.arange(num_preds).repeat(num_preds)
+    j_idx = torch.arange(num_preds).repeat_interleave(num_preds)
+    pairwise_true = y_true[i_idx] > y_true[j_idx]
+    opa_indices = pairwise_true.nonzero()[0].flatten()
+    opa_preds = y_pred[i_idx[opa_indices]] - y_pred[j_idx[opa_indices]]
+    opa_acc = float((opa_preds > 0).sum()) / (opa_preds.shape[0] + 0.00000001)
+    return opa_acc
+
 @torch.no_grad()
-def eval_epoch(logger, loader, model, split='val'):
+def eval_epoch(logger, loader, model, run_dir, split='val'):
     model.eval()
+    opas, kendalltaus = [], []
     time_start = time.time()
     for batch in loader:
         num_sample_config = len(batch.y)
+        edge_code = int(torch.sum(batch.edge_index))
         batch = preprocess_batch(batch, model, num_sample_config)
         batch.split = split
         true = batch.y
@@ -213,6 +225,8 @@ def eval_epoch(logger, loader, model, split='val'):
                     res = module.layer_post_mp(graph_embed)
                     res_list.append(res)
         res_list = torch.cat(res_list, dim=0)
+        # print(res_list[:5])
+        # print(res_list[-5:])
         pred = torch.zeros(1, len(data.y), 1).to(torch.device(cfg.device))
         part_cnt = 0
         for i, num_parts in enumerate(batch_num_parts):
@@ -220,21 +234,38 @@ def eval_epoch(logger, loader, model, split='val'):
                 for j in range(num_sample_config):
                     pred[i, j, :] += res_list[part_cnt, :]
                     part_cnt += 1
+        # print(pred)
         pred = pred.view(num_sample_config)
+        print(pred)
         true = true.view(num_sample_config)
         pred_rank = torch.argsort(pred, dim=-1, descending=False)
         true_rank = torch.argsort(true, dim=-1, descending=False)
         pred_rank = pred_rank.cpu().numpy()
         true_rank = true_rank.cpu().numpy()
         true = true.cpu().numpy()
+        pred = pred.cpu().numpy()
         err_1 = (true[pred_rank[0]] - true[true_rank[0]]) / true[true_rank[0]]
         err_10 = (np.min(true[pred_rank[:10]]) - true[true_rank[0]]) / true[true_rank[0]]
         err_100 = (np.min(true[pred_rank[:100]]) - true[true_rank[0]]) / true[true_rank[0]]
+        ken = scipy.stats.kendalltau(true, pred).correlation
+        opa = eval_opa(true, pred)
+        opas.append(opa)
+        kendalltaus.append(ken)        
         print('top 1 err: ' + str(err_1))
         print('top 10 err: ' + str(err_10))
         print('top 100 err: ' + str(err_100))
-        print("kendall:" + str(scipy.stats.kendalltau(pred_rank, true_rank).correlation))
+        print("kendall:" + str(ken))
         time_start = time.time()
+        # Save results
+        file_pred = f'{run_dir}/{split}/nodes_{batch.num_nodes}_edges_{batch.num_edges}_ecode_{edge_code}.pred'
+        np.save(file_pred, pred)
+        if split=='val':
+            file_true = f'{run_dir}/{split}/nodes_{batch.num_nodes}_edges_{batch.num_edges}_ecode_{edge_code}.true'
+            np.save(file_true, true)
+
+    print(f"split {split}: opa {sum(opas)/len(opas):.1%} kendall: {sum(kendalltaus)/len(kendalltaus):.1%}")
+    print('- ' * 30)
+
 
 if __name__ == '__main__':
     # Load cmd line args
@@ -277,6 +308,9 @@ if __name__ == '__main__':
         logging.info(cfg)
         cfg.params = params_count(model)
         logging.info('Num parameters: %s', cfg.params)
-        eval_epoch(loggers[2], loaders[2], model, split='test')
+        # eval_epoch(loggers[0], loaders[0], model, run_dir=cfg.run_dir, split='train')
+        eval_epoch(loggers[2], loaders[2], model, run_dir=cfg.run_dir, split='test')
+        eval_epoch(loggers[1], loaders[1], model, run_dir=cfg.run_dir, split='val')
+        
         
         

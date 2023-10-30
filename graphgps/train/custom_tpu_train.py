@@ -428,7 +428,7 @@ def inference_only(loggers, loaders, model, optimizer=None, scheduler=None):
     cur_epoch = 0
     start_time = time.perf_counter()
 
-    for i in range(0, num_splits):
+    for i in range(1, num_splits):
         eval_epoch(loggers[i], loaders[i], model,
                    split=split_names[i])
         perf[i].append(loggers[i].write_epoch(cur_epoch))

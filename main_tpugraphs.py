@@ -111,13 +111,13 @@ def run_loop_settings():
     return run_ids, seeds, split_indices
 
 class TPUModel(torch.nn.Module):
-    def __init__(self, model):
+    def __init__(self, model, device):
         super().__init__()
         self.model = model
-        self.emb = nn.Embedding(128, 128, max_norm=True)
-        self.linear_map = nn.Linear(286, 128, bias=True)
-        self.op_weights = nn.Parameter(torch.ones(1,1,requires_grad=True) * 100)
-        self.config_weights = nn.Parameter(torch.ones(1,18,requires_grad=True) * 100)
+        self.emb = nn.Embedding(128, 128, max_norm=True, device=device)
+        self.linear_map = nn.Linear(286, 128, bias=True, device=device)
+        self.op_weights = nn.Parameter(torch.ones(1,1,requires_grad=True, device=device) * 100)
+        self.config_weights = nn.Parameter(torch.ones(1,18,requires_grad=True, device=device) * 100)
 
 if __name__ == '__main__':
     # Load cmd line args
@@ -146,7 +146,7 @@ if __name__ == '__main__':
         logging.info(f"    Starting now: {datetime.datetime.now()}")
         # Set machine learning pipeline
         model = create_model() # Standard GCN/SAGE
-        model = TPUModel(model) # Parameters associated with the TPU dataset before feeding into GCN/SAGE
+        model = TPUModel(model, device=cfg.device) # Parameters associated with the TPU dataset before feeding into GCN/SAGE
         loaders = create_loader()
         loggers = create_logger()
         if cfg.pretrained.dir:
