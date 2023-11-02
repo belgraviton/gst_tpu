@@ -110,7 +110,21 @@ def load_dataset_master(format, name, dataset_dir_all):
             
         elif pyg_dataset_id == 'TPUGraphs':
             if name in ['TPUGraphsNR', 'TPUGraphsND', 'TPUGraphsXR', 'TPUGraphsXD']:
-                dataset = preformat_TPUGraphs(osp.join(dataset_dir_all, name))
+                if name[-2]=='N':
+                    source = 'nlp'
+                elif name[-2]=='X':
+                    source = 'xla'
+                else:
+                    raise NameError(f'Dataset has incorrect source type: {name}')
+                
+                if name[-1]=='R':
+                    search = 'random'
+                elif name[-1]=='D':
+                    search = 'default'
+                else:
+                    raise NameError(f'Dataset has incorrect search type: {name}')
+                
+                dataset = preformat_TPUGraphs(osp.join(dataset_dir_all, name), source=source, search=search)
             else:
                 format_parts = format.split('-')
                 dataset = preformat_TPUGraphs(dataset_dir, source=format_parts[2], search=format_parts[3])

@@ -8,3 +8,4 @@ _pycache__/
 datasets/
 results/
 tests/
+wandb/
