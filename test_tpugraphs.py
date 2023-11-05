@@ -236,7 +236,6 @@ def eval_epoch(logger, loader, model, run_dir, split='val'):
                     part_cnt += 1
         # print(pred)
         pred = pred.view(num_sample_config)
-        print(pred)
         true = true.view(num_sample_config)
         pred_rank = torch.argsort(pred, dim=-1, descending=False)
         true_rank = torch.argsort(true, dim=-1, descending=False)
@@ -245,16 +244,14 @@ def eval_epoch(logger, loader, model, run_dir, split='val'):
         true = true.cpu().numpy()
         pred = pred.cpu().numpy()
         err_1 = (true[pred_rank[0]] - true[true_rank[0]]) / true[true_rank[0]]
+        err_5 = (np.min(true[pred_rank[:5]]) - true[true_rank[0]]) / true[true_rank[0]]
         err_10 = (np.min(true[pred_rank[:10]]) - true[true_rank[0]]) / true[true_rank[0]]
         err_100 = (np.min(true[pred_rank[:100]]) - true[true_rank[0]]) / true[true_rank[0]]
         ken = scipy.stats.kendalltau(true, pred).correlation
         opa = eval_opa(true, pred)
         opas.append(opa)
-        kendalltaus.append(ken)        
-        print('top 1 err: ' + str(err_1))
-        print('top 10 err: ' + str(err_10))
-        print('top 100 err: ' + str(err_100))
-        print("kendall:" + str(ken))
+        kendalltaus.append(ken)
+        print(f'opa {opa:.1%} kendall: {ken:.1%} top err: 1 {err_1:.1%} 5 {err_5:.1%} 10 {err_10:.1%} 100 {err_100:.1%}')
         time_start = time.time()
         # Save results
         file_pred = f'{run_dir}/{split}/nodes_{batch.num_nodes}_edges_{batch.num_edges}_ecode_{edge_code}.pred'
@@ -263,8 +260,11 @@ def eval_epoch(logger, loader, model, run_dir, split='val'):
             file_true = f'{run_dir}/{split}/nodes_{batch.num_nodes}_edges_{batch.num_edges}_ecode_{edge_code}.true'
             np.save(file_true, true)
 
-    print(f"split {split}: opa {sum(opas)/len(opas):.1%} kendall: {sum(kendalltaus)/len(kendalltaus):.1%}")
+    res_string = f"split {split}: opa {sum(opas)/len(opas):.1%} kendall: {sum(kendalltaus)/len(kendalltaus):.1%}"
+    print(res_string)
     print('- ' * 30)
+    with open(f'{run_dir}/{split}/res.txt', 'w') as fob:
+        fob.write(res_string)
 
 
 if __name__ == '__main__':

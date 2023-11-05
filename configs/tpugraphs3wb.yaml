@@ -14,6 +14,7 @@ train:
   ckpt_period: 100
   sampler: full_batch
   ckpt_best: True
+  num_sample_config: 32
 model:
   type: custom_tpu_gnn
   loss_fun: cross_entropy

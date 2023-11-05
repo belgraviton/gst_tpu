@@ -55,11 +55,10 @@ def preprocess_batch(batch, model, num_sample_configs):
         processed_batch_list.append(g)
     return Batch.from_data_list(processed_batch_list), sample_idx
         
-def train_epoch(logger, loader, model, optimizer, scheduler, emb_table, batch_accumulation):
+def train_epoch(logger, loader, model, optimizer, scheduler, emb_table, batch_accumulation, num_sample_config = 32):
     model.train()
     optimizer.zero_grad()
     time_start = time.time()
-    num_sample_config = 32
     for iter, batch in enumerate(loader):
         batch, sampled_idx = preprocess_batch(batch, model, num_sample_config)
         batch.to(torch.device(cfg.device))
@@ -180,10 +179,9 @@ def train_epoch(logger, loader, model, optimizer, scheduler, emb_table, batch_ac
 
 
 @torch.no_grad()
-def eval_epoch(logger, loader, model, split='val'):
+def eval_epoch(logger, loader, model, split='val', num_sample_config = 32):
     model.eval()
     time_start = time.time()
-    num_sample_config = 32
     for batch in loader:
         batch, _ = preprocess_batch(batch, model, num_sample_config)
         batch.split = split
@@ -309,7 +307,7 @@ def custom_train(loggers, loaders, model, optimizer, scheduler):
                          name=wandb_name)
         run.config.update(cfg_to_dict(cfg))
 
-    num_splits = len(loggers)
+    num_splits = len(loggers) - 1 # Skip test
     split_names = ['val', 'test']
     full_epoch_times = []
     perf = [[] for _ in range(num_splits)]
@@ -317,13 +315,15 @@ def custom_train(loggers, loaders, model, optimizer, scheduler):
     for cur_epoch in range(start_epoch, cfg.optim.max_epoch):
         start_time = time.perf_counter()
         train_epoch(loggers[0], loaders[0], model, optimizer, scheduler, emb_table,
-                    cfg.optim.batch_accumulation)
+                    cfg.optim.batch_accumulation,
+                    num_sample_config=cfg.train.num_sample_config)
         perf[0].append(loggers[0].write_epoch(cur_epoch))
 
         if is_eval_epoch(cur_epoch):
             for i in range(1, num_splits):
                 eval_epoch(loggers[i], loaders[i], model,
-                           split=split_names[i - 1])
+                           split=split_names[i - 1],
+                            num_sample_config=cfg.train.num_sample_config)
                 perf[i].append(loggers[i].write_epoch(cur_epoch))
         else:
             for i in range(1, num_splits):
@@ -359,11 +359,11 @@ def custom_train(loggers, loaders, model, optimizer, scheduler):
                     # the main metric on the training set.
                     best_train = f"train_{m}: {0:.4f}"
                 best_val = f"val_{m}: {perf[1][best_epoch][m]:.4f}"
-                best_test = f"test_{m}: {perf[2][best_epoch][m]:.4f}"
+                # best_test = f"test_{m}: {perf[2][best_epoch][m]:.4f}"
 
                 if cfg.wandb.use:
                     bstats = {"best/epoch": best_epoch}
-                    for i, s in enumerate(['train', 'val', 'test']):
+                    for i, s in enumerate(['train', 'val']):
                         bstats[f"best/{s}_loss"] = perf[i][best_epoch]['loss']
                         if m in perf[i][best_epoch]:
                             bstats[f"best/{s}_{m}"] = perf[i][best_epoch][m]
@@ -387,7 +387,7 @@ def custom_train(loggers, loaders, model, optimizer, scheduler):
                 f"Best so far: epoch {best_epoch}\t"
                 f"train_loss: {perf[0][best_epoch]['loss']:.4f} {best_train}\t"
                 f"val_loss: {perf[1][best_epoch]['loss']:.4f} {best_val}\t"
-                f"test_loss: {perf[2][best_epoch]['loss']:.4f} {best_test}"
+                # f"test_loss: {perf[2][best_epoch]['loss']:.4f} {best_test}"
             )
             if hasattr(model, 'trf_layers'):
                 # Log SAN's gamma parameter values if they are trainable.

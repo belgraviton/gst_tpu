@@ -72,7 +72,7 @@ def flatten_dict(metrics):
     Returns:
         A flat dictionary with names prefixed with "train/" , "val/" , "test/"
     """
-    prefixes = ['train', 'val', 'test']
+    prefixes = ['train', 'val']
     result = {}
     for i in range(len(metrics)):
         # Take the latest metrics.
