@@ -19,10 +19,10 @@ class TPUGraphs(InMemoryDataset):
                  pre_transform: Optional[Callable] = None,
                  pre_filter: Optional[Callable] = None,
                  source: str = 'nlp',  # 'nlp' or 'xla'
-                 search: str = 'random'  # 'random' or 'default'
+                 search: str = 'random'  # 'random', 'default' or 'all'
                 ):
         assert source in ('nlp', 'xla')
-        assert search in ('random', 'default')
+        assert search in ('random', 'default', 'all')
         self.thres = thres
         self.source = source
         self.search = search

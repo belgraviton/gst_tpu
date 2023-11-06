@@ -109,7 +109,7 @@ def load_dataset_master(format, name, dataset_dir_all):
             dataset = preformat_MalNetLarge(dataset_dir, feature_set=name)
             
         elif pyg_dataset_id == 'TPUGraphs':
-            if name in ['TPUGraphsNR', 'TPUGraphsND', 'TPUGraphsXR', 'TPUGraphsXD']:
+            if name in ['TPUGraphsNR', 'TPUGraphsND', 'TPUGraphsXR', 'TPUGraphsXD', 'TPUGraphsXA']:
                 if name[-2]=='N':
                     source = 'nlp'
                 elif name[-2]=='X':
@@ -121,6 +121,8 @@ def load_dataset_master(format, name, dataset_dir_all):
                     search = 'random'
                 elif name[-1]=='D':
                     search = 'default'
+                elif name[-1]=='A':
+                    search = 'all'
                 else:
                     raise NameError(f'Dataset has incorrect search type: {name}')
                 
