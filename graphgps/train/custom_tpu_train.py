@@ -55,7 +55,7 @@ def preprocess_batch(batch, model, num_sample_configs):
         processed_batch_list.append(g)
     return Batch.from_data_list(processed_batch_list), sample_idx
         
-def train_epoch(logger, loader, model, optimizer, scheduler, emb_table, batch_accumulation, num_sample_config = 32):
+def train_epoch(logger, loader, model, optimizer, scheduler, emb_table, batch_accumulation, num_sample_config=32, gnn_concat=False):
     model.train()
     optimizer.zero_grad()
     time_start = time.time()
@@ -117,7 +117,10 @@ def train_epoch(logger, loader, model, optimizer, scheduler, emb_table, batch_ac
             if i < module_len - 1:
                 batch_train = module(batch_train)
             if i == module_len - 1:
-                batch_train_embed = tnn.global_max_pool(batch_train.x, batch_train.batch) + tnn.global_mean_pool(batch_train.x, batch_train.batch)
+                if gnn_concat:
+                    batch_train_embed = torch.cat([tnn.global_max_pool(batch_train.x, batch_train.batch), tnn.global_mean_pool(batch_train.x, batch_train.batch)], dim=1)
+                else:
+                    batch_train_embed = tnn.global_max_pool(batch_train.x, batch_train.batch) + tnn.global_mean_pool(batch_train.x, batch_train.batch)
         graph_embed = batch_train_embed / torch.norm(batch_train_embed, dim=-1, keepdim=True)
         for i, module in enumerate(model.model.children()):
             if i == module_len - 1:
@@ -179,7 +182,7 @@ def train_epoch(logger, loader, model, optimizer, scheduler, emb_table, batch_ac
 
 
 @torch.no_grad()
-def eval_epoch(logger, loader, model, split='val', num_sample_config = 32):
+def eval_epoch(logger, loader, model, split='val', num_sample_config = 32, gnn_concat=False):
     model.eval()
     time_start = time.time()
     for batch in loader:
@@ -232,7 +235,10 @@ def eval_epoch(logger, loader, model, split='val', num_sample_config = 32):
             if i < module_len - 1:
                 batch_seg = module(batch_seg)
             if i == module_len - 1:
-                batch_seg_embed = tnn.global_max_pool(batch_seg.x, batch_seg.batch) + tnn.global_mean_pool(batch_seg.x, batch_seg.batch)
+                if gnn_concat:
+                    batch_seg_embed = torch.cat([tnn.global_max_pool(batch_seg.x, batch_seg.batch), tnn.global_mean_pool(batch_seg.x, batch_seg.batch)], dim=1)
+                else:
+                    batch_seg_embed = tnn.global_max_pool(batch_seg.x, batch_seg.batch) + tnn.global_mean_pool(batch_seg.x, batch_seg.batch)
         graph_embed = batch_seg_embed / torch.norm(batch_seg_embed, dim=-1, keepdim=True)
         for i, module in enumerate(model.model.children()):
             if i == module_len - 1:
@@ -316,14 +322,16 @@ def custom_train(loggers, loaders, model, optimizer, scheduler):
         start_time = time.perf_counter()
         train_epoch(loggers[0], loaders[0], model, optimizer, scheduler, emb_table,
                     cfg.optim.batch_accumulation,
-                    num_sample_config=cfg.train.num_sample_config)
+                    num_sample_config=cfg.train.num_sample_config,
+                    gnn_concat=cfg.gnn.concat)
         perf[0].append(loggers[0].write_epoch(cur_epoch))
 
         if is_eval_epoch(cur_epoch):
             for i in range(1, num_splits):
                 eval_epoch(loggers[i], loaders[i], model,
                            split=split_names[i - 1],
-                            num_sample_config=cfg.train.num_sample_config)
+                            num_sample_config=cfg.train.num_sample_config,
+                            gnn_concat=cfg.gnn.concat)
                 perf[i].append(loggers[i].write_epoch(cur_epoch))
         else:
             for i in range(1, num_splits):

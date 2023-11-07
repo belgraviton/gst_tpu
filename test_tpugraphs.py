@@ -159,7 +159,7 @@ def eval_opa(y_true, y_pred):
     return opa_acc
 
 @torch.no_grad()
-def eval_epoch(logger, loader, model, run_dir, split='val'):
+def eval_epoch(logger, loader, model, run_dir, split='val', gnn_concat=False):
     model.eval()
     opas, kendalltaus = [], []
     time_start = time.time()
@@ -218,7 +218,10 @@ def eval_epoch(logger, loader, model, run_dir, split='val'):
                 if i < module_len - 1:
                     batch_seg = module(batch_seg)
                 if i == module_len - 1:
-                    batch_seg_embed = tnn.global_max_pool(batch_seg.x, batch_seg.batch) + tnn.global_mean_pool(batch_seg.x, batch_seg.batch)
+                    if gnn_concat:
+                        batch_seg_embed = torch.cat([tnn.global_max_pool(batch_seg.x, batch_seg.batch), tnn.global_mean_pool(batch_seg.x, batch_seg.batch)], dim=1)
+                    else:
+                        batch_seg_embed = tnn.global_max_pool(batch_seg.x, batch_seg.batch) + tnn.global_mean_pool(batch_seg.x, batch_seg.batch)
             graph_embed = batch_seg_embed / torch.norm(batch_seg_embed, dim=-1, keepdim=True)
             for i, module in enumerate(model.model.children()):
                 if i == module_len - 1:
@@ -309,8 +312,8 @@ if __name__ == '__main__':
         cfg.params = params_count(model)
         logging.info('Num parameters: %s', cfg.params)
         # eval_epoch(loggers[0], loaders[0], model, run_dir=cfg.run_dir, split='train')
-        eval_epoch(loggers[2], loaders[2], model, run_dir=cfg.run_dir, split='test')
-        eval_epoch(loggers[1], loaders[1], model, run_dir=cfg.run_dir, split='val')
+        eval_epoch(loggers[2], loaders[2], model, run_dir=cfg.run_dir, split='test', gnn_concat=cfg.gnn.concat)
+        eval_epoch(loggers[1], loaders[1], model, run_dir=cfg.run_dir, split='val', gnn_concat=cfg.gnn.concat)
         
         
         
