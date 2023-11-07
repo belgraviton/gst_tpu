@@ -9,3 +9,6 @@ def custom_gnn_cfg(cfg):
 
     # Use residual connections between the GNN layers.
     cfg.gnn.residual = False
+
+    # Use concatenation as output of base layers.
+    cfg.gnn.concat = False
