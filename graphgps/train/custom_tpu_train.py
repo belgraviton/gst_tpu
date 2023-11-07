@@ -18,7 +18,7 @@ from graphgps.loss.subtoken_prediction_loss import subtoken_cross_entropy
 from graphgps.utils import cfg_to_dict, flatten_dict, make_wandb_name
 from graphgps.history import History
 
-def pairwise_hinge_loss_batch(pred, true):
+def pairwise_hinge_loss_batch(pred, true, hinge_shift=0.1):
     # pred: (batch_size, num_preds )
     # true: (batch_size, num_preds)
     batch_size = pred.shape[0]
@@ -26,7 +26,7 @@ def pairwise_hinge_loss_batch(pred, true):
     i_idx = torch.arange(num_preds).repeat(num_preds)
     j_idx = torch.arange(num_preds).repeat_interleave(num_preds)
     pairwise_true = true[:,i_idx] > true[:,j_idx]
-    loss = torch.sum(torch.nn.functional.relu(0.1 - (pred[:,i_idx] - pred[:,j_idx])) * pairwise_true.float()) / batch_size
+    loss = torch.sum(torch.nn.functional.relu(hinge_shift - (pred[:,i_idx] - pred[:,j_idx])) * pairwise_true.float()) / batch_size
     return loss
 
 
@@ -152,7 +152,7 @@ def train_epoch(logger, loader, model, optimizer, scheduler, emb_table, batch_ac
         elif cfg.dataset.name in ['TPUGraphs', 'TPUGraphsNR', 'TPUGraphsND', 'TPUGraphsXR', 'TPUGraphsXD']:
             pred = pred.view(-1, num_sample_config)
             true = true.view(-1, num_sample_config)
-            loss = pairwise_hinge_loss_batch(pred, true)
+            loss = pairwise_hinge_loss_batch(pred, true, hinge_shift=cfg.optim.hingeshift)
             _true = true.detach().to('cpu', non_blocking=True)
             _pred = pred.detach().to('cpu', non_blocking=True)
         else:
@@ -260,7 +260,7 @@ def eval_epoch(logger, loader, model, split='val', num_sample_config = 32, gnn_c
         elif cfg.dataset.name in ['TPUGraphs', 'TPUGraphsNR', 'TPUGraphsND', 'TPUGraphsXR', 'TPUGraphsXD']:
             pred = pred.view(-1, num_sample_config)
             true = true.view(-1, num_sample_config)
-            loss = pairwise_hinge_loss_batch(pred, true)
+            loss = pairwise_hinge_loss_batch(pred, true, hinge_shift=cfg.optim.hingeshift)
             _true = true.detach().to('cpu', non_blocking=True)
             _pred = pred.detach().to('cpu', non_blocking=True)
         else:
