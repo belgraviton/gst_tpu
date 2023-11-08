@@ -25,3 +25,6 @@ def extended_optim_cfg(cfg):
 
     # Clip gradient norms while training
     cfg.optim.clip_grad_norm = False
+
+    # Shift in hinge loss
+    cfg.optim.hingeshift = 0.1
