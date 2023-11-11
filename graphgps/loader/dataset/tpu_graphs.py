@@ -1,6 +1,6 @@
 from typing import Optional, Callable, List
 import copy
-import re
+import json
 import os
 import glob
 import os.path as osp
@@ -19,18 +19,30 @@ class TPUGraphs(InMemoryDataset):
                  pre_transform: Optional[Callable] = None,
                  pre_filter: Optional[Callable] = None,
                  source: str = 'nlp',  # 'nlp' or 'xla'
-                 search: str = 'random'  # 'random', 'default' or 'all'
+                 search: str = 'random',  # 'random', 'default' or 'all'
+                 cut: bool = False,
                 ):
         assert source in ('nlp', 'xla')
         assert search in ('random', 'default', 'all')
         self.thres = thres
         self.source = source
         self.search = search
+        if cut:
+            with open('configs/sel_features_info.json', 'r') as fob:
+                self.sel_features_info = json.load(fob)
+        else:
+            self.sel_features_info = None
+
         super().__init__(root, transform, pre_transform, pre_filter)
         self.data, self.slices = torch.load(self.processed_paths[0])
-        op_feats_mean = torch.mean(self.data.op_feats, dim=0, keepdim=True)
-        op_feats_std = torch.std(self.data.op_feats, dim=0, keepdim=True)
-        op_feats_std[op_feats_std < 1e-6] = 1
+        if cut:
+            op_feats_mean = torch.tensor(self.sel_features_info[source]['mean'])
+            op_feats_std = torch.tensor(self.sel_features_info[source]['std'])
+        else:
+            op_feats_mean = torch.mean(self.data.op_feats, dim=0, keepdim=True)
+            op_feats_std = torch.std(self.data.op_feats, dim=0, keepdim=True)
+            op_feats_std[op_feats_std < 1e-6] = 1
+        # Normolize data
         self.data.op_feats = (self.data.op_feats - op_feats_mean) / op_feats_std
         
     @property
@@ -48,6 +60,9 @@ class TPUGraphs(InMemoryDataset):
         split_dict = {'train': [], 'valid': [], 'test': []}
         graphs_cnt = 0
         parts_cnt = 0
+
+        node_feats_ind = self.sel_features_info[self.source]['node_feats_ind']
+        config_feats_ind = self.sel_features_info[self.source]['config_feats_ind']
         for raw_path in self.raw_paths:
             for split_name in split_names:
                 filenames = glob.glob(osp.join(os.path.join(raw_path, split_name), '*.npz'))
@@ -58,9 +73,9 @@ class TPUGraphs(InMemoryDataset):
                       print('error in', filename)
                     edge_index = torch.tensor(np_file["edge_index"].T)
                     runtime = torch.tensor(np_file["config_runtime"])
-                    op = torch.tensor(np_file["node_feat"])
+                    op = torch.tensor(np_file["node_feat"][:, node_feats_ind])
                     op_code = torch.tensor(np_file["node_opcode"])
-                    config_feats = torch.tensor(np_file["node_config_feat"])
+                    config_feats = torch.tensor(np_file["node_config_feat"][:, :, config_feats_ind])
                     config_feats = config_feats.view(-1, config_feats.shape[-1])
                     config_idx = torch.tensor(np_file["node_config_ids"])
                     num_config = torch.tensor(np_file["node_config_feat"].shape[0])
