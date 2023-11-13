@@ -149,7 +149,7 @@ def train_epoch(logger, loader, model, optimizer, scheduler, emb_table, batch_ac
             loss, pred_score = subtoken_cross_entropy(pred, true)
             _true = true
             _pred = pred_score
-        elif cfg.dataset.name in ['TPUGraphs', 'TPUGraphsNR', 'TPUGraphsND', 'TPUGraphsXR', 'TPUGraphsXD']:
+        elif cfg.dataset.name in ['TPUGraphs', 'TPUGraphsNR', 'TPUGraphsND', 'TPUGraphsNA', 'TPUGraphsXR', 'TPUGraphsXD', 'TPUGraphsXA']:
             pred = pred.view(-1, num_sample_config)
             true = true.view(-1, num_sample_config)
             loss = pairwise_hinge_loss_batch(pred, true, hinge_shift=cfg.optim.hingeshift)
@@ -243,7 +243,7 @@ def eval_epoch(logger, loader, model, split='val', num_sample_config = 32, gnn_c
         for i, module in enumerate(model.model.children()):
             if i == module_len - 1:
                 res = module.layer_post_mp(graph_embed)
-        pred = torch.zeros(len(loader.dataset), len(data.y), 1).to(torch.device(cfg.device))
+        pred = torch.zeros(len(batch_list), len(data.y), 1).to(torch.device(cfg.device))
         part_cnt = 0
         for i, num_parts in enumerate(batch_num_parts):
             for _ in range(num_parts):
@@ -257,7 +257,7 @@ def eval_epoch(logger, loader, model, split='val', num_sample_config = 32, gnn_c
             loss, pred_score = subtoken_cross_entropy(pred, true)
             _true = true
             _pred = pred_score
-        elif cfg.dataset.name in ['TPUGraphs', 'TPUGraphsNR', 'TPUGraphsND', 'TPUGraphsXR', 'TPUGraphsXD']:
+        elif cfg.dataset.name in ['TPUGraphs', 'TPUGraphsNR', 'TPUGraphsND', 'TPUGraphsNA', 'TPUGraphsXR', 'TPUGraphsXD', 'TPUGraphsXA']:
             pred = pred.view(-1, num_sample_config)
             true = true.view(-1, num_sample_config)
             loss = pairwise_hinge_loss_batch(pred, true, hinge_shift=cfg.optim.hingeshift)
