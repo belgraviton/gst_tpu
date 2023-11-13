@@ -113,13 +113,13 @@ def run_loop_settings():
     return run_ids, seeds, split_indices
 
 class TPUModel(torch.nn.Module):
-    def __init__(self, model):
+    def __init__(self, model, device):
         super().__init__()
         self.model = model
-        self.emb = nn.Embedding(128, 128, max_norm=True)
-        self.linear_map = nn.Linear(286, 128, bias=True)
-        self.op_weights = nn.Parameter(torch.ones(1,1,requires_grad=True) * 100)
-        self.config_weights = nn.Parameter(torch.ones(1,18,requires_grad=True) * 100)
+        self.emb = nn.Embedding(cfg.gnn.embin, cfg.gnn.embout, max_norm=True, device=device)
+        self.linear_map = nn.Linear(cfg.gnn.linmapin, cfg.gnn.linmapout, bias=True, device=device)
+        self.op_weights = nn.Parameter(torch.ones(1,1,requires_grad=True, device=device) * cfg.gnn.opweight)
+        self.config_weights = nn.Parameter(torch.ones(1,cfg.gnn.configsize,requires_grad=True, device=device) * cfg.gnn.configweight)
 
 
 def pairwise_hinge_loss_batch(pred, true):
@@ -296,8 +296,8 @@ if __name__ == '__main__':
         logging.info(f"    Starting now: {datetime.datetime.now()}")
         # Set machine learning pipeline
         model = create_model()
-        model = TPUModel(model)
-        model = model.to(torch.device(cfg.device))
+        model = TPUModel(model, device=cfg.device)
+        # model = model.to(torch.device(cfg.device))
         optimizer = create_optimizer(model.parameters(),
                                      new_optimizer_config(cfg))
         scheduler = create_scheduler(optimizer, new_scheduler_config(cfg))

@@ -61,8 +61,9 @@ class TPUGraphs(InMemoryDataset):
         graphs_cnt = 0
         parts_cnt = 0
 
-        node_feats_ind = self.sel_features_info[self.source]['node_feats_ind']
-        config_feats_ind = self.sel_features_info[self.source]['config_feats_ind']
+        if self.sel_features_info:
+            node_feats_ind = self.sel_features_info[self.source]['node_feats_ind']
+            config_feats_ind = self.sel_features_info[self.source]['config_feats_ind']
         for raw_path in self.raw_paths:
             for split_name in split_names:
                 filenames = glob.glob(osp.join(os.path.join(raw_path, split_name), '*.npz'))
@@ -73,9 +74,13 @@ class TPUGraphs(InMemoryDataset):
                       print('error in', filename)
                     edge_index = torch.tensor(np_file["edge_index"].T)
                     runtime = torch.tensor(np_file["config_runtime"])
-                    op = torch.tensor(np_file["node_feat"][:, node_feats_ind])
                     op_code = torch.tensor(np_file["node_opcode"])
-                    config_feats = torch.tensor(np_file["node_config_feat"][:, :, config_feats_ind])
+                    if self.sel_features_info:
+                        op = torch.tensor(np_file["node_feat"][:, node_feats_ind])
+                        config_feats = torch.tensor(np_file["node_config_feat"][:, :, config_feats_ind])
+                    else:
+                        op = torch.tensor(np_file["node_feat"])
+                        config_feats = torch.tensor(np_file["node_config_feat"])
                     config_feats = config_feats.view(-1, config_feats.shape[-1])
                     config_idx = torch.tensor(np_file["node_config_ids"])
                     num_config = torch.tensor(np_file["node_config_feat"].shape[0])

@@ -243,7 +243,7 @@ def eval_epoch(logger, loader, model, split='val', num_sample_config = 32, gnn_c
         for i, module in enumerate(model.model.children()):
             if i == module_len - 1:
                 res = module.layer_post_mp(graph_embed)
-        pred = torch.zeros(len(loader.dataset), len(data.y), 1).to(torch.device(cfg.device))
+        pred = torch.zeros(len(batch_list), len(data.y), 1).to(torch.device(cfg.device))
         part_cnt = 0
         for i, num_parts in enumerate(batch_num_parts):
             for _ in range(num_parts):

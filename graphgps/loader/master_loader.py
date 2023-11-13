@@ -126,7 +126,7 @@ def load_dataset_master(format, name, dataset_dir_all):
                 else:
                     raise NameError(f'Dataset has incorrect search type: {name}')
                 
-                dataset = preformat_TPUGraphs(osp.join(dataset_dir_all, (name + '_cut' if cfg.dataset.cut else '')), source=source, search=search, cut=cfg.dataset.cut)
+                dataset = preformat_TPUGraphs(osp.join(dataset_dir_all, name + ('_cut' if cfg.dataset.cut else '')), source=source, search=search, cut=cfg.dataset.cut)
             else:
                 format_parts = format.split('-')
                 dataset = preformat_TPUGraphs(dataset_dir, source=format_parts[2], search=format_parts[3])
