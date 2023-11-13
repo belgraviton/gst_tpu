@@ -133,14 +133,16 @@ def train_epoch(logger, loader, model, optimizer, scheduler, emb_table, batch_ac
             batch_other = batch_other.to(torch.device(cfg.device))
             batch_other = batch_other * mask    
             batch_other_embed = torch.zeros_like(graph_embed)
+            batch_zero_embed = torch.zeros_like(graph_embed)
             part_cnt = 0
             for i, num_parts in enumerate(batch_num_parts):
                 for j in range(num_parts-1):
                     batch_other_embed[i, :] += batch_other[part_cnt, :]
+                    batch_zero_embed[i] += torch.abs(batch_other[part_cnt, :]).sum() < 1e-6
                     part_cnt += 1
             batch_num_parts = torch.Tensor(batch_num_parts).to(torch.device(cfg.device))
             batch_num_parts = batch_num_parts.view(-1, 1)
-            multiplier_num = (batch_num_parts-1)/ 2 + 1
+            multiplier_num = batch_num_parts / (batch_num_parts - batch_zero_embed)
             pred = graph_embed*multiplier_num + batch_other_embed
         else:
             pred = graph_embed
