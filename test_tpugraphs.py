@@ -166,6 +166,7 @@ def eval_epoch(logger, loader, model, run_dir, split='val', gnn_concat=False):
     for batch in loader:
         num_sample_config = len(batch.y)
         edge_code = int(torch.sum(batch.edge_index))
+        ncf_code = int(torch.sum(batch.config_feats))
         batch = preprocess_batch(batch, model, num_sample_config)
         batch.split = split
         true = batch.y
@@ -257,10 +258,10 @@ def eval_epoch(logger, loader, model, run_dir, split='val', gnn_concat=False):
         print(f'opa {opa:.1%} kendall: {ken:.1%} top err: 1 {err_1:.1%} 5 {err_5:.1%} 10 {err_10:.1%} 100 {err_100:.1%}')
         time_start = time.time()
         # Save results
-        file_pred = f'{run_dir}/{split}/nodes_{batch.num_nodes}_edges_{batch.num_edges}_ecode_{edge_code}.pred'
+        file_pred = f'{run_dir}/{split}/nodes_{batch.num_nodes}_edges_{batch.num_edges}_ecode_{edge_code}_ncfcode_{ncf_code}.pred'
         np.save(file_pred, pred)
         if split=='val':
-            file_true = f'{run_dir}/{split}/nodes_{batch.num_nodes}_edges_{batch.num_edges}_ecode_{edge_code}.true'
+            file_true = f'{run_dir}/{split}/nodes_{batch.num_nodes}_edges_{batch.num_edges}_ecode_{edge_code}_ncfcode_{ncf_code}.true'
             np.save(file_true, true)
 
     res_string = f"split {split}: opa {sum(opas)/len(opas):.1%} kendall: {sum(kendalltaus)/len(kendalltaus):.1%}"
@@ -313,7 +314,7 @@ if __name__ == '__main__':
         logging.info('Num parameters: %s', cfg.params)
         # eval_epoch(loggers[0], loaders[0], model, run_dir=cfg.run_dir, split='train')
         eval_epoch(loggers[2], loaders[2], model, run_dir=cfg.run_dir, split='test', gnn_concat=cfg.gnn.concat)
-        eval_epoch(loggers[1], loaders[1], model, run_dir=cfg.run_dir, split='val', gnn_concat=cfg.gnn.concat)
+        # eval_epoch(loggers[1], loaders[1], model, run_dir=cfg.run_dir, split='val', gnn_concat=cfg.gnn.concat)
         
         
         
