@@ -1,0 +1,52 @@
+out_dir: results
+name: tpugraphs
+metric_best: opa
+dataset:
+  name: TPUGraphs
+  format: PyG-TPUGraphs
+  task: graph
+  task_type: ranking
+  transductive: False
+train:
+  mode: custom_tpu
+  batch_size: 32
+  eval_period: 1
+  ckpt_period: 100
+  sampler: full_batch
+  ckpt_best: True
+  num_sample_config: 32
+model:
+  type: GPSModel
+  loss_fun: cross_entropy
+  edge_decoding: dot
+  graph_pooling: add
+gt:  # Hyperparameters optimized for ~500k budget.
+  layer_type: GENConv+Transformer
+  layers: 3
+  n_heads: 2
+  dim_hidden: 64  # `gt.dim_hidden` must match `gnn.dim_inner`
+  dropout: 0.1
+  attn_dropout: 0.1
+  layer_norm: False
+  batch_norm: True
+gnn:
+  head: inductive_node
+  layers_pre_mp: 1
+  layers_post_mp: 1
+  dim_inner: 64  # `gt.dim_hidden` must match `gnn.dim_inner`
+  batchnorm: True
+  act: relu
+  dropout: 0.0
+  agg: mean
+  normalize_adj: False
+optim:
+  optimizer: adam
+  base_lr: 0.0001
+  max_epoch: 20000
+share:
+  dim_in: 286
+device: cuda
+wandb:
+  entity: belgraviton
+  project: tpurun
+  use: true
