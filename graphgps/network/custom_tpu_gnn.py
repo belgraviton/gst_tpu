@@ -18,7 +18,7 @@ class CustomGNN(torch.nn.Module):
 
     def __init__(self, dim_in, dim_out):
         super().__init__()
-        dim_in = 128
+        dim_in = cfg.gnn.linmapout
         self.encoder = FeatureEncoder(dim_in)
         dim_in = self.encoder.dim_in
 
