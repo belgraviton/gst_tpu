@@ -30,6 +30,9 @@ from torch_sparse import SparseTensor
 from torch_geometric.data import Data
 import numpy as np
 import scipy
+from pathlib import Path
+import pandas as pd
+import json
 
 from graphgps.finetuning import load_pretrained_model_cfg, \
     init_model_from_pretrained
@@ -158,6 +161,79 @@ def eval_opa(y_true, y_pred):
     opa_acc = float((opa_preds > 0).sum()) / (opa_preds.shape[0] + 0.00000001)
     return opa_acc
 
+
+def get_ix_name3(dt, source, dscut=False):
+    if dscut:
+        with open('configs/sel_features_info.json', 'r') as fob:
+            sel_features_info = json.load(fob)
+    nnodes = dt['node_feat'].shape[0]
+    nedges = dt['edge_index'].shape[0]
+    ei_sum = int(np.sum(dt['edge_index']))
+    if dscut:
+        ncf_sum = int(np.sum(dt['node_config_feat'][:,:,sel_features_info[source]['config_feats_ind']]))
+    else:
+        ncf_sum = int(np.sum(dt['node_config_feat']))
+    ix_name = f'nodes_{nnodes}_edges_{nedges}_ecode_{ei_sum}'  # _ncfcode_{ncf_sum}'
+    return ix_name
+
+
+def check_metrics(mname, split, ds_source, ds_search, dscut=False, path_ds='./datasets/TPUGraphs/raw/npz/', ds_type = 'layout'):
+
+    split_long = 'valid' if split=='val' else split
+    
+    path_data = Path(f'./results/{mname}/0')
+    pred_files = os.listdir(path_data / split)
+    sel_pred_files = [f for f in pred_files if f[0] == 'n']
+
+    # Gather data
+    pdata = dict()
+    for f in sel_pred_files:
+        parts = f.split('.')
+        fid = parts[0]
+        tp = parts[1]
+        ranks = np.load(path_data /split / f)
+        if fid in pdata:
+            pdata[fid][tp] = ranks
+        else:
+            pdata[fid] = {tp: ranks}
+
+    # Dataset
+    path_files = Path(path_ds) / ds_type / ds_source / ds_search / split_long
+    files = os.listdir(path_files)
+
+    # CSV creation
+    
+    
+    true_lib_lst = []
+    true_npz_lst = []
+    pred_lib_lst = []
+    
+    result = {'ID': [], 'TopConfigs': []}
+    
+    for file in files:
+        print(file)
+        graph_id = os.path.splitext(file)[0]
+    
+        npz_data = np.load(path_files / file)
+        graph_code = get_ix_name3(npz_data, source=ds_source, dscut=dscut)
+        pred = pdata[graph_code]['pred']
+        ranks = np.argsort(pred)
+        pred_lib_lst.append(pred)
+        result['TopConfigs'].append(';'.join([str(r) for r in ranks]))
+        
+        result['ID'].append(f'{ds_type}:{ds_source}:{ds_search}:{graph_id}')
+    
+        if split=='val':
+            true_lib_lst.append(pdata[graph_code]['true'])
+        
+            sct = np.argsort(npz_data['config_runtime'])
+            true_npz_lst.append(npz_data['config_runtime'])
+    
+    df = pd.DataFrame(result)
+    print(df)
+    df.to_csv(path_data /split / f'pred_{mname}.csv', index=False)
+    
+
 @torch.no_grad()
 def eval_epoch(logger, loader, model, run_dir, split='val', gnn_concat=False):
     model.eval()
@@ -258,10 +334,10 @@ def eval_epoch(logger, loader, model, run_dir, split='val', gnn_concat=False):
         print(f'opa {opa:.1%} kendall: {ken:.1%} top err: 1 {err_1:.1%} 5 {err_5:.1%} 10 {err_10:.1%} 100 {err_100:.1%}')
         time_start = time.time()
         # Save results
-        file_pred = f'{run_dir}/{split}/nodes_{batch.num_nodes}_edges_{batch.num_edges}_ecode_{edge_code}_ncfcode_{ncf_code}.pred'
+        file_pred = f'{run_dir}/{split}/nodes_{batch.num_nodes}_edges_{batch.num_edges}_ecode_{edge_code}.pred'  # _ncfcode_{ncf_code}
         np.save(file_pred, pred)
         if split=='val':
-            file_true = f'{run_dir}/{split}/nodes_{batch.num_nodes}_edges_{batch.num_edges}_ecode_{edge_code}_ncfcode_{ncf_code}.true'
+            file_true = f'{run_dir}/{split}/nodes_{batch.num_nodes}_edges_{batch.num_edges}_ecode_{edge_code}.true'
             np.save(file_true, true)
 
     res_string = f"split {split}: opa {sum(opas)/len(opas):.1%} kendall: {sum(kendalltaus)/len(kendalltaus):.1%}"
@@ -269,6 +345,8 @@ def eval_epoch(logger, loader, model, run_dir, split='val', gnn_concat=False):
     print('- ' * 30)
     with open(f'{run_dir}/{split}/res.txt', 'w') as fob:
         fob.write(res_string)
+    # Build prediction
+    check_metrics(mname=cfg.name, split=split, ds_source=loader.dataset.source, ds_search=loader.dataset.search, dscut=cfg.dataset.cut)
 
 
 if __name__ == '__main__':
@@ -314,7 +392,7 @@ if __name__ == '__main__':
         logging.info('Num parameters: %s', cfg.params)
         # eval_epoch(loggers[0], loaders[0], model, run_dir=cfg.run_dir, split='train')
         eval_epoch(loggers[2], loaders[2], model, run_dir=cfg.run_dir, split='test', gnn_concat=cfg.gnn.concat)
-        # eval_epoch(loggers[1], loaders[1], model, run_dir=cfg.run_dir, split='val', gnn_concat=cfg.gnn.concat)
+        eval_epoch(loggers[1], loaders[1], model, run_dir=cfg.run_dir, split='val', gnn_concat=cfg.gnn.concat)
         
         
         
