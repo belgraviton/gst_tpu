@@ -1,0 +1,12 @@
+# Compiled python modules.
+*.pyc
+
+# Byte-compiled
+_pycache__/
+.cache/
+
+datasets/
+results/
+tests/
+wandb/
+scripts/

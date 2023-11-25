@@ -1,3 +1,7 @@
+# GST_TPU 
+
+This repository is a copy of [GST]([https://github.com/google-research-datasets/tpu_graphs](https://github.com/kaidic/GST)). This one was used to make experiments in order to take part in [Google - Fast or Slow? Predict AI Model Runtime](https://www.kaggle.com/competitions/predict-ai-model-runtime/overview) Kaggle competition. 53rd place was achieved at the competition.
+
 ## Learning Large Graph Property Prediction via Graph Segment Training
 Kaidi Cao, Phitchaya Mangpo Phothilimthana, Sami Abu-El-Haija, Dustin Zelle, Yanqi Zhou, Charith Mendis, Jure Leskovec, Bryan Perozzi
 _________________

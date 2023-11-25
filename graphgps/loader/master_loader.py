@@ -78,7 +78,7 @@ def log_loaded_dataset(dataset, format, name):
 
 
 @register_loader('custom_master_loader')
-def load_dataset_master(format, name, dataset_dir):
+def load_dataset_master(format, name, dataset_dir_all):
     """
     Master loader that controls loading of all datasets, overshadowing execution
     of any default GraphGym dataset loader. Default GraphGym dataset loader are
@@ -90,14 +90,14 @@ def load_dataset_master(format, name, dataset_dir):
     Args:
         format: dataset format name that identifies Dataset class
         name: dataset name to select from the class identified by `format`
-        dataset_dir: path where to store the processed dataset
+        dataset_dir_all: path where to store the processed dataset
 
     Returns:
         PyG dataset object with applied perturbation transforms and data splits
     """
     if format.startswith('PyG-'):
-        pyg_dataset_id = format.split('-', 1)[1]
-        dataset_dir = osp.join(dataset_dir, pyg_dataset_id)
+        pyg_dataset_id = format.split('-')[1]
+        dataset_dir = osp.join(dataset_dir_all, pyg_dataset_id)
 
         if pyg_dataset_id == 'GNNBenchmarkDataset':
             dataset = preformat_GNNBenchmarkDataset(dataset_dir, name)
@@ -109,7 +109,27 @@ def load_dataset_master(format, name, dataset_dir):
             dataset = preformat_MalNetLarge(dataset_dir, feature_set=name)
             
         elif pyg_dataset_id == 'TPUGraphs':
-            dataset = preformat_TPUGraphs(dataset_dir)
+            if name in ['TPUGraphsNR', 'TPUGraphsND', 'TPUGraphsNA', 'TPUGraphsXR', 'TPUGraphsXD', 'TPUGraphsXA']:
+                if name[-2]=='N':
+                    source = 'nlp'
+                elif name[-2]=='X':
+                    source = 'xla'
+                else:
+                    raise NameError(f'Dataset has incorrect source type: {name}')
+                
+                if name[-1]=='R':
+                    search = 'random'
+                elif name[-1]=='D':
+                    search = 'default'
+                elif name[-1]=='A':
+                    search = 'all'
+                else:
+                    raise NameError(f'Dataset has incorrect search type: {name}')
+                
+                dataset = preformat_TPUGraphs(osp.join(dataset_dir_all, name + ('_cut' if cfg.dataset.cut else '')), source=source, search=search, cut=cfg.dataset.cut)
+            else:
+                format_parts = format.split('-')
+                dataset = preformat_TPUGraphs(dataset_dir, source=format_parts[2], search=format_parts[3])
 
         elif pyg_dataset_id == 'Planetoid':
             dataset = Planetoid(dataset_dir, name)
@@ -318,10 +338,10 @@ def preformat_MalNetLarge(dataset_dir, feature_set):
 
     return dataset
 
-def preformat_TPUGraphs(dataset_dir):
-   
-    dataset = TPUGraphs(dataset_dir)
-    dataset.name = 'TPUGraphs'
+def preformat_TPUGraphs(dataset_dir, source: str = 'nlp', search: str = 'random', cut: bool = False):
+    print(dataset_dir, cut)
+    dataset = TPUGraphs(dataset_dir, source = source, search = search, cut = cut)
+    dataset.name = dataset_dir.split('/')[-1]
     
     split_dict = dataset.get_idx_split()
     dataset.split_idxs = [split_dict['train'],

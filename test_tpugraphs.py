@@ -30,6 +30,9 @@ from torch_sparse import SparseTensor
 from torch_geometric.data import Data
 import numpy as np
 import scipy
+from pathlib import Path
+import pandas as pd
+import json
 
 from graphgps.finetuning import load_pretrained_model_cfg, \
     init_model_from_pretrained
@@ -63,10 +66,10 @@ def custom_set_out_dir(cfg, cfg_fname, name_tag):
         name_tag (string): Additional name tag to identify this execution of the
             configuration file, specified in :obj:`cfg.name_tag`
     """
-    run_name = os.path.splitext(os.path.basename(cfg_fname))[0]
-    run_name += f"-{name_tag}" if name_tag else ""
-    cfg.out_dir = os.path.join(cfg.out_dir, run_name)
-
+    # run_name = os.path.splitext(os.path.basename(cfg_fname))[0]
+    # run_name += f"-{name_tag}" if name_tag else ""
+    # cfg.out_dir = os.path.join(cfg.out_dir, run_name)
+    cfg.out_dir = os.path.join(cfg.out_dir, cfg.name)
 
 def custom_set_run_dir(cfg, run_id):
     """Custom output directory naming for each experiment run.
@@ -113,13 +116,13 @@ def run_loop_settings():
     return run_ids, seeds, split_indices
 
 class TPUModel(torch.nn.Module):
-    def __init__(self, model):
+    def __init__(self, model, device):
         super().__init__()
         self.model = model
-        self.emb = nn.Embedding(128, 128, max_norm=True)
-        self.linear_map = nn.Linear(286, 128, bias=True)
-        self.op_weights = nn.Parameter(torch.ones(1,1,requires_grad=True) * 100)
-        self.config_weights = nn.Parameter(torch.ones(1,18,requires_grad=True) * 100)
+        self.emb = nn.Embedding(cfg.gnn.embin, cfg.gnn.embout, max_norm=True, device=device)
+        self.linear_map = nn.Linear(cfg.gnn.linmapin, cfg.gnn.linmapout, bias=True, device=device)
+        self.op_weights = nn.Parameter(torch.ones(1,1,requires_grad=True, device=device) * cfg.gnn.opweight)
+        self.config_weights = nn.Parameter(torch.ones(1,cfg.gnn.configsize,requires_grad=True, device=device) * cfg.gnn.configweight)
 
 
 def pairwise_hinge_loss_batch(pred, true):
@@ -138,9 +141,9 @@ def preprocess_batch(batch, model, num_sample_configs):
     batch_list = batch.to_data_list()
     processed_batch_list = []
     for g in batch_list:
-        sample_idx = torch.randint(0, g.num_config.item(), (num_sample_configs,))
-        g.y = g.y[sample_idx]
-        g.config_feats = g.config_feats.view(g.num_config, g.num_config_idx, -1)[sample_idx, ...]
+        # sample_idx = torch.randint(0, g.num_config.item(), (num_sample_configs,))
+        # g.y = g.y[sample_idx]
+        g.config_feats = g.config_feats.view(g.num_config, g.num_config_idx, -1)[:, ...]
         g.config_feats = g.config_feats.transpose(0,1)
         g.config_feats_full = torch.zeros((g.num_nodes, num_sample_configs, g.config_feats.shape[-1]), device=g.config_feats.device)
         g.config_feats_full[g.config_idx, ...] += g.config_feats
@@ -148,12 +151,98 @@ def preprocess_batch(batch, model, num_sample_configs):
         processed_batch_list.append(g)
     return Batch.from_data_list(processed_batch_list)
 
+def eval_opa(y_true, y_pred):
+    num_preds = y_pred.shape[0]
+    i_idx = torch.arange(num_preds).repeat(num_preds)
+    j_idx = torch.arange(num_preds).repeat_interleave(num_preds)
+    pairwise_true = y_true[i_idx] > y_true[j_idx]
+    opa_indices = pairwise_true.nonzero()[0].flatten()
+    opa_preds = y_pred[i_idx[opa_indices]] - y_pred[j_idx[opa_indices]]
+    opa_acc = float((opa_preds > 0).sum()) / (opa_preds.shape[0] + 0.00000001)
+    return opa_acc
+
+
+def get_ix_name3(dt, source, dscut=False):
+    if dscut:
+        with open('configs/sel_features_info.json', 'r') as fob:
+            sel_features_info = json.load(fob)
+    nnodes = dt['node_feat'].shape[0]
+    nedges = dt['edge_index'].shape[0]
+    ei_sum = int(np.sum(dt['edge_index']))
+    if dscut:
+        ncf_sum = int(np.sum(dt['node_config_feat'][:,:,sel_features_info[source]['config_feats_ind']]))
+    else:
+        ncf_sum = int(np.sum(dt['node_config_feat']))
+    ix_name = f'nodes_{nnodes}_edges_{nedges}_ecode_{ei_sum}'  # _ncfcode_{ncf_sum}'
+    return ix_name
+
+
+def check_metrics(mname, split, ds_source, ds_search, dscut=False, path_ds='./datasets/TPUGraphs/raw/npz/', ds_type = 'layout'):
+
+    split_long = 'valid' if split=='val' else split
+    
+    path_data = Path(f'./results/{mname}/0')
+    pred_files = os.listdir(path_data / split)
+    sel_pred_files = [f for f in pred_files if f[0] == 'n']
+
+    # Gather data
+    pdata = dict()
+    for f in sel_pred_files:
+        parts = f.split('.')
+        fid = parts[0]
+        tp = parts[1]
+        ranks = np.load(path_data /split / f)
+        if fid in pdata:
+            pdata[fid][tp] = ranks
+        else:
+            pdata[fid] = {tp: ranks}
+
+    # Dataset
+    path_files = Path(path_ds) / ds_type / ds_source / ds_search / split_long
+    files = os.listdir(path_files)
+
+    # CSV creation
+    
+    
+    true_lib_lst = []
+    true_npz_lst = []
+    pred_lib_lst = []
+    
+    result = {'ID': [], 'TopConfigs': []}
+    
+    for file in files:
+        print(file)
+        graph_id = os.path.splitext(file)[0]
+    
+        npz_data = np.load(path_files / file)
+        graph_code = get_ix_name3(npz_data, source=ds_source, dscut=dscut)
+        pred = pdata[graph_code]['pred']
+        ranks = np.argsort(pred)
+        pred_lib_lst.append(pred)
+        result['TopConfigs'].append(';'.join([str(r) for r in ranks]))
+        
+        result['ID'].append(f'{ds_type}:{ds_source}:{ds_search}:{graph_id}')
+    
+        if split=='val':
+            true_lib_lst.append(pdata[graph_code]['true'])
+        
+            sct = np.argsort(npz_data['config_runtime'])
+            true_npz_lst.append(npz_data['config_runtime'])
+    
+    df = pd.DataFrame(result)
+    print(df)
+    df.to_csv(path_data /split / f'pred_{mname}.csv', index=False)
+    
+
 @torch.no_grad()
-def eval_epoch(logger, loader, model, split='val'):
+def eval_epoch(logger, loader, model, run_dir, split='val', gnn_concat=False):
     model.eval()
+    opas, kendalltaus = [], []
     time_start = time.time()
     for batch in loader:
         num_sample_config = len(batch.y)
+        edge_code = int(torch.sum(batch.edge_index))
+        ncf_code = int(torch.sum(batch.config_feats))
         batch = preprocess_batch(batch, model, num_sample_config)
         batch.split = split
         true = batch.y
@@ -206,13 +295,18 @@ def eval_epoch(logger, loader, model, split='val'):
                 if i < module_len - 1:
                     batch_seg = module(batch_seg)
                 if i == module_len - 1:
-                    batch_seg_embed = tnn.global_max_pool(batch_seg.x, batch_seg.batch) + tnn.global_mean_pool(batch_seg.x, batch_seg.batch)
+                    if gnn_concat:
+                        batch_seg_embed = torch.cat([tnn.global_max_pool(batch_seg.x, batch_seg.batch), tnn.global_mean_pool(batch_seg.x, batch_seg.batch)], dim=1)
+                    else:
+                        batch_seg_embed = tnn.global_max_pool(batch_seg.x, batch_seg.batch) + tnn.global_mean_pool(batch_seg.x, batch_seg.batch)
             graph_embed = batch_seg_embed / torch.norm(batch_seg_embed, dim=-1, keepdim=True)
             for i, module in enumerate(model.model.children()):
                 if i == module_len - 1:
                     res = module.layer_post_mp(graph_embed)
                     res_list.append(res)
         res_list = torch.cat(res_list, dim=0)
+        # print(res_list[:5])
+        # print(res_list[-5:])
         pred = torch.zeros(1, len(data.y), 1).to(torch.device(cfg.device))
         part_cnt = 0
         for i, num_parts in enumerate(batch_num_parts):
@@ -220,6 +314,7 @@ def eval_epoch(logger, loader, model, split='val'):
                 for j in range(num_sample_config):
                     pred[i, j, :] += res_list[part_cnt, :]
                     part_cnt += 1
+        # print(pred)
         pred = pred.view(num_sample_config)
         true = true.view(num_sample_config)
         pred_rank = torch.argsort(pred, dim=-1, descending=False)
@@ -227,14 +322,32 @@ def eval_epoch(logger, loader, model, split='val'):
         pred_rank = pred_rank.cpu().numpy()
         true_rank = true_rank.cpu().numpy()
         true = true.cpu().numpy()
+        pred = pred.cpu().numpy()
         err_1 = (true[pred_rank[0]] - true[true_rank[0]]) / true[true_rank[0]]
+        err_5 = (np.min(true[pred_rank[:5]]) - true[true_rank[0]]) / true[true_rank[0]]
         err_10 = (np.min(true[pred_rank[:10]]) - true[true_rank[0]]) / true[true_rank[0]]
         err_100 = (np.min(true[pred_rank[:100]]) - true[true_rank[0]]) / true[true_rank[0]]
-        print('top 1 err: ' + str(err_1))
-        print('top 10 err: ' + str(err_10))
-        print('top 100 err: ' + str(err_100))
-        print("kendall:" + str(scipy.stats.kendalltau(pred_rank, true_rank).correlation))
+        ken = scipy.stats.kendalltau(true, pred).correlation
+        opa = eval_opa(true, pred)
+        opas.append(opa)
+        kendalltaus.append(ken)
+        print(f'opa {opa:.1%} kendall: {ken:.1%} top err: 1 {err_1:.1%} 5 {err_5:.1%} 10 {err_10:.1%} 100 {err_100:.1%}')
         time_start = time.time()
+        # Save results
+        file_pred = f'{run_dir}/{split}/nodes_{batch.num_nodes}_edges_{batch.num_edges}_ecode_{edge_code}.pred'  # _ncfcode_{ncf_code}
+        np.save(file_pred, pred)
+        if split=='val':
+            file_true = f'{run_dir}/{split}/nodes_{batch.num_nodes}_edges_{batch.num_edges}_ecode_{edge_code}.true'
+            np.save(file_true, true)
+
+    res_string = f"split {split}: opa {sum(opas)/len(opas):.1%} kendall: {sum(kendalltaus)/len(kendalltaus):.1%}"
+    print(res_string)
+    print('- ' * 30)
+    with open(f'{run_dir}/{split}/res.txt', 'w') as fob:
+        fob.write(res_string)
+    # Build prediction
+    check_metrics(mname=cfg.name, split=split, ds_source=loader.dataset.source, ds_search=loader.dataset.search, dscut=cfg.dataset.cut)
+
 
 if __name__ == '__main__':
     # Load cmd line args
@@ -262,8 +375,8 @@ if __name__ == '__main__':
         logging.info(f"    Starting now: {datetime.datetime.now()}")
         # Set machine learning pipeline
         model = create_model()
-        model = TPUModel(model)
-        model = model.to(torch.device(cfg.device))
+        model = TPUModel(model, device=cfg.device)
+        # model = model.to(torch.device(cfg.device))
         optimizer = create_optimizer(model.parameters(),
                                      new_optimizer_config(cfg))
         scheduler = create_scheduler(optimizer, new_scheduler_config(cfg))
@@ -277,6 +390,9 @@ if __name__ == '__main__':
         logging.info(cfg)
         cfg.params = params_count(model)
         logging.info('Num parameters: %s', cfg.params)
-        eval_epoch(loggers[2], loaders[2], model, split='test')
+        # eval_epoch(loggers[0], loaders[0], model, run_dir=cfg.run_dir, split='train')
+        eval_epoch(loggers[2], loaders[2], model, run_dir=cfg.run_dir, split='test', gnn_concat=cfg.gnn.concat)
+        eval_epoch(loggers[1], loaders[1], model, run_dir=cfg.run_dir, split='val', gnn_concat=cfg.gnn.concat)
+        
         
         

@@ -55,9 +55,10 @@ def custom_set_out_dir(cfg, cfg_fname, name_tag):
         name_tag (string): Additional name tag to identify this execution of the
             configuration file, specified in :obj:`cfg.name_tag`
     """
-    run_name = os.path.splitext(os.path.basename(cfg_fname))[0]
-    run_name += f"-{name_tag}" if name_tag else ""
-    cfg.out_dir = os.path.join(cfg.out_dir, run_name)
+    # run_name = os.path.splitext(os.path.basename(cfg_fname))[0]
+    # run_name += f"-{name_tag}" if name_tag else ""
+    # cfg.out_dir = os.path.join(cfg.out_dir, run_name)
+    cfg.out_dir = os.path.join(cfg.out_dir, cfg.name)
 
 
 def custom_set_run_dir(cfg, run_id):
@@ -110,13 +111,13 @@ def run_loop_settings():
     return run_ids, seeds, split_indices
 
 class TPUModel(torch.nn.Module):
-    def __init__(self, model):
+    def __init__(self, model, device):
         super().__init__()
         self.model = model
-        self.emb = nn.Embedding(128, 128, max_norm=True)
-        self.linear_map = nn.Linear(286, 128, bias=True)
-        self.op_weights = nn.Parameter(torch.ones(1,1,requires_grad=True) * 100)
-        self.config_weights = nn.Parameter(torch.ones(1,18,requires_grad=True) * 100)
+        self.emb = nn.Embedding(cfg.gnn.embin, cfg.gnn.embout, max_norm=True, device=device)
+        self.linear_map = nn.Linear(cfg.gnn.linmapin, cfg.gnn.linmapout, bias=True, device=device)
+        self.op_weights = nn.Parameter(torch.ones(1,1,requires_grad=True, device=device) * cfg.gnn.opweight)
+        self.config_weights = nn.Parameter(torch.ones(1,cfg.gnn.configsize,requires_grad=True, device=device) * cfg.gnn.configweight)
 
 if __name__ == '__main__':
     # Load cmd line args
@@ -145,7 +146,7 @@ if __name__ == '__main__':
         logging.info(f"    Starting now: {datetime.datetime.now()}")
         # Set machine learning pipeline
         model = create_model() # Standard GCN/SAGE
-        model = TPUModel(model) # Parameters associated with the TPU dataset before feeding into GCN/SAGE
+        model = TPUModel(model, device=cfg.device) # Parameters associated with the TPU dataset before feeding into GCN/SAGE
         loaders = create_loader()
         loggers = create_logger()
         if cfg.pretrained.dir:

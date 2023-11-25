@@ -1,0 +1,2 @@
+# EVAL_PARS='pretrained.dir results/t00_03e_bs32e1k_XR pretrained.reset_prediction_head False train.mode inference-tpu'
+python test_tpugraphs.py --cfg configs/tpugraphs2.yaml dataset.format PyG-TPUGraphs-xla-random name t00_03e5m_bs32e1k_XR optim.max_epoch 1000 train.batch_size 1 train.epoch_resume 767

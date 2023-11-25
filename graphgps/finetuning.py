@@ -59,8 +59,8 @@ def load_pretrained_model_cfg(cfg):
     set_new_cfg_allowed(pretrained_cfg, True)
     pretrained_cfg.merge_from_file(pretrained_cfg_fname)
 
-    assert cfg.model.type == 'GPSModel', \
-        "Fine-tuning regime is untested for other model types."
+    # assert cfg.model.type == 'GPSModel', \
+    #     "Fine-tuning regime is untested for other model types."
     compare_cfg(cfg, pretrained_cfg, 'model.type', strict=True)
     compare_cfg(cfg, pretrained_cfg, 'model.graph_pooling')
     compare_cfg(cfg, pretrained_cfg, 'model.edge_decoding')
@@ -120,10 +120,10 @@ def init_model_from_pretrained(model, pretrained_dir,
     pretrained_dict = ckpt[MODEL_STATE]
     model_dict = model.state_dict()
 
-    # print('>>>> pretrained dict: ')
-    # print(pretrained_dict.keys())
-    # print('>>>> model dict: ')
-    # print(model_dict.keys())
+    print('>>>> pretrained dict: ')
+    print(pretrained_dict.keys())
+    print('>>>> model dict: ')
+    print(model_dict.keys())
 
     if reset_prediction_head:
         # Filter out prediction head parameter keys.

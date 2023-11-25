@@ -24,6 +24,9 @@ def extended_cfg(cfg):
     """General extended config options.
     """
 
+    # Specific name of the directory inside out_dir
+    cfg.name = 'tpugraphs'
+
     # Additional name tag used in `run_dir` and `wandb_name` auto generation.
     cfg.name_tag = ""
 
@@ -31,3 +34,6 @@ def extended_cfg(cfg):
     # always checkpoint the current best model based on validation performance,
     # instead, when False, follow cfg.train.eval_period checkpointing frequency.
     cfg.train.ckpt_best = False
+
+    # Number of configs to sample in train and eval steps
+    cfg.train.num_sample_config = 32

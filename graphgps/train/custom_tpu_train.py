@@ -18,7 +18,7 @@ from graphgps.loss.subtoken_prediction_loss import subtoken_cross_entropy
 from graphgps.utils import cfg_to_dict, flatten_dict, make_wandb_name
 from graphgps.history import History
 
-def pairwise_hinge_loss_batch(pred, true):
+def pairwise_hinge_loss_batch(pred, true, hinge_shift=0.1):
     # pred: (batch_size, num_preds )
     # true: (batch_size, num_preds)
     batch_size = pred.shape[0]
@@ -26,7 +26,7 @@ def pairwise_hinge_loss_batch(pred, true):
     i_idx = torch.arange(num_preds).repeat(num_preds)
     j_idx = torch.arange(num_preds).repeat_interleave(num_preds)
     pairwise_true = true[:,i_idx] > true[:,j_idx]
-    loss = torch.sum(torch.nn.functional.relu(0.1 - (pred[:,i_idx] - pred[:,j_idx])) * pairwise_true.float()) / batch_size
+    loss = torch.sum(torch.nn.functional.relu(hinge_shift - (pred[:,i_idx] - pred[:,j_idx])) * pairwise_true.float()) / batch_size
     return loss
 
 
@@ -55,11 +55,10 @@ def preprocess_batch(batch, model, num_sample_configs):
         processed_batch_list.append(g)
     return Batch.from_data_list(processed_batch_list), sample_idx
         
-def train_epoch(logger, loader, model, optimizer, scheduler, emb_table, batch_accumulation):
+def train_epoch(logger, loader, model, optimizer, scheduler, emb_table, batch_accumulation, num_sample_config=32, gnn_concat=False):
     model.train()
     optimizer.zero_grad()
     time_start = time.time()
-    num_sample_config = 32
     for iter, batch in enumerate(loader):
         batch, sampled_idx = preprocess_batch(batch, model, num_sample_config)
         batch.to(torch.device(cfg.device))
@@ -118,7 +117,10 @@ def train_epoch(logger, loader, model, optimizer, scheduler, emb_table, batch_ac
             if i < module_len - 1:
                 batch_train = module(batch_train)
             if i == module_len - 1:
-                batch_train_embed = tnn.global_max_pool(batch_train.x, batch_train.batch) + tnn.global_mean_pool(batch_train.x, batch_train.batch)
+                if gnn_concat:
+                    batch_train_embed = torch.cat([tnn.global_max_pool(batch_train.x, batch_train.batch), tnn.global_mean_pool(batch_train.x, batch_train.batch)], dim=1)
+                else:
+                    batch_train_embed = tnn.global_max_pool(batch_train.x, batch_train.batch) + tnn.global_mean_pool(batch_train.x, batch_train.batch)
         graph_embed = batch_train_embed / torch.norm(batch_train_embed, dim=-1, keepdim=True)
         for i, module in enumerate(model.model.children()):
             if i == module_len - 1:
@@ -131,14 +133,16 @@ def train_epoch(logger, loader, model, optimizer, scheduler, emb_table, batch_ac
             batch_other = batch_other.to(torch.device(cfg.device))
             batch_other = batch_other * mask    
             batch_other_embed = torch.zeros_like(graph_embed)
+            batch_zero_embed = torch.zeros_like(graph_embed)
             part_cnt = 0
             for i, num_parts in enumerate(batch_num_parts):
                 for j in range(num_parts-1):
                     batch_other_embed[i, :] += batch_other[part_cnt, :]
+                    batch_zero_embed[i] += torch.abs(batch_other[part_cnt, :]).sum() < 1e-6
                     part_cnt += 1
             batch_num_parts = torch.Tensor(batch_num_parts).to(torch.device(cfg.device))
             batch_num_parts = batch_num_parts.view(-1, 1)
-            multiplier_num = (batch_num_parts-1)/ 2 + 1
+            multiplier_num = batch_num_parts / (batch_num_parts - batch_zero_embed)
             pred = graph_embed*multiplier_num + batch_other_embed
         else:
             pred = graph_embed
@@ -147,10 +151,10 @@ def train_epoch(logger, loader, model, optimizer, scheduler, emb_table, batch_ac
             loss, pred_score = subtoken_cross_entropy(pred, true)
             _true = true
             _pred = pred_score
-        elif cfg.dataset.name == 'TPUGraphs':
+        elif cfg.dataset.name in ['TPUGraphs', 'TPUGraphsNR', 'TPUGraphsND', 'TPUGraphsNA', 'TPUGraphsXR', 'TPUGraphsXD', 'TPUGraphsXA']:
             pred = pred.view(-1, num_sample_config)
             true = true.view(-1, num_sample_config)
-            loss = pairwise_hinge_loss_batch(pred, true)
+            loss = pairwise_hinge_loss_batch(pred, true, hinge_shift=cfg.optim.hingeshift)
             _true = true.detach().to('cpu', non_blocking=True)
             _pred = pred.detach().to('cpu', non_blocking=True)
         else:
@@ -180,10 +184,9 @@ def train_epoch(logger, loader, model, optimizer, scheduler, emb_table, batch_ac
 
 
 @torch.no_grad()
-def eval_epoch(logger, loader, model, split='val'):
+def eval_epoch(logger, loader, model, split='val', num_sample_config = 32, gnn_concat=False):
     model.eval()
     time_start = time.time()
-    num_sample_config = 32
     for batch in loader:
         batch, _ = preprocess_batch(batch, model, num_sample_config)
         batch.split = split
@@ -234,12 +237,15 @@ def eval_epoch(logger, loader, model, split='val'):
             if i < module_len - 1:
                 batch_seg = module(batch_seg)
             if i == module_len - 1:
-                batch_seg_embed = tnn.global_max_pool(batch_seg.x, batch_seg.batch) + tnn.global_mean_pool(batch_seg.x, batch_seg.batch)
+                if gnn_concat:
+                    batch_seg_embed = torch.cat([tnn.global_max_pool(batch_seg.x, batch_seg.batch), tnn.global_mean_pool(batch_seg.x, batch_seg.batch)], dim=1)
+                else:
+                    batch_seg_embed = tnn.global_max_pool(batch_seg.x, batch_seg.batch) + tnn.global_mean_pool(batch_seg.x, batch_seg.batch)
         graph_embed = batch_seg_embed / torch.norm(batch_seg_embed, dim=-1, keepdim=True)
         for i, module in enumerate(model.model.children()):
             if i == module_len - 1:
                 res = module.layer_post_mp(graph_embed)
-        pred = torch.zeros(len(loader.dataset), len(data.y), 1).to(torch.device(cfg.device))
+        pred = torch.zeros(len(batch_list), len(data.y), 1).to(torch.device(cfg.device))
         part_cnt = 0
         for i, num_parts in enumerate(batch_num_parts):
             for _ in range(num_parts):
@@ -253,10 +259,10 @@ def eval_epoch(logger, loader, model, split='val'):
             loss, pred_score = subtoken_cross_entropy(pred, true)
             _true = true
             _pred = pred_score
-        elif cfg.dataset.name == 'TPUGraphs':
+        elif cfg.dataset.name in ['TPUGraphs', 'TPUGraphsNR', 'TPUGraphsND', 'TPUGraphsNA', 'TPUGraphsXR', 'TPUGraphsXD', 'TPUGraphsXA']:
             pred = pred.view(-1, num_sample_config)
             true = true.view(-1, num_sample_config)
-            loss = pairwise_hinge_loss_batch(pred, true)
+            loss = pairwise_hinge_loss_batch(pred, true, hinge_shift=cfg.optim.hingeshift)
             _true = true.detach().to('cpu', non_blocking=True)
             _pred = pred.detach().to('cpu', non_blocking=True)
         else:
@@ -309,7 +315,7 @@ def custom_train(loggers, loaders, model, optimizer, scheduler):
                          name=wandb_name)
         run.config.update(cfg_to_dict(cfg))
 
-    num_splits = len(loggers)
+    num_splits = len(loggers) - 1 # Skip test
     split_names = ['val', 'test']
     full_epoch_times = []
     perf = [[] for _ in range(num_splits)]
@@ -317,13 +323,17 @@ def custom_train(loggers, loaders, model, optimizer, scheduler):
     for cur_epoch in range(start_epoch, cfg.optim.max_epoch):
         start_time = time.perf_counter()
         train_epoch(loggers[0], loaders[0], model, optimizer, scheduler, emb_table,
-                    cfg.optim.batch_accumulation)
+                    cfg.optim.batch_accumulation,
+                    num_sample_config=cfg.train.num_sample_config,
+                    gnn_concat=cfg.gnn.concat)
         perf[0].append(loggers[0].write_epoch(cur_epoch))
 
         if is_eval_epoch(cur_epoch):
             for i in range(1, num_splits):
                 eval_epoch(loggers[i], loaders[i], model,
-                           split=split_names[i - 1])
+                           split=split_names[i - 1],
+                            num_sample_config=cfg.train.num_sample_config,
+                            gnn_concat=cfg.gnn.concat)
                 perf[i].append(loggers[i].write_epoch(cur_epoch))
         else:
             for i in range(1, num_splits):
@@ -359,11 +369,11 @@ def custom_train(loggers, loaders, model, optimizer, scheduler):
                     # the main metric on the training set.
                     best_train = f"train_{m}: {0:.4f}"
                 best_val = f"val_{m}: {perf[1][best_epoch][m]:.4f}"
-                best_test = f"test_{m}: {perf[2][best_epoch][m]:.4f}"
+                # best_test = f"test_{m}: {perf[2][best_epoch][m]:.4f}"
 
                 if cfg.wandb.use:
                     bstats = {"best/epoch": best_epoch}
-                    for i, s in enumerate(['train', 'val', 'test']):
+                    for i, s in enumerate(['train', 'val']):
                         bstats[f"best/{s}_loss"] = perf[i][best_epoch]['loss']
                         if m in perf[i][best_epoch]:
                             bstats[f"best/{s}_{m}"] = perf[i][best_epoch][m]
@@ -387,7 +397,7 @@ def custom_train(loggers, loaders, model, optimizer, scheduler):
                 f"Best so far: epoch {best_epoch}\t"
                 f"train_loss: {perf[0][best_epoch]['loss']:.4f} {best_train}\t"
                 f"val_loss: {perf[1][best_epoch]['loss']:.4f} {best_val}\t"
-                f"test_loss: {perf[2][best_epoch]['loss']:.4f} {best_test}"
+                # f"test_loss: {perf[2][best_epoch]['loss']:.4f} {best_test}"
             )
             if hasattr(model, 'trf_layers'):
                 # Log SAN's gamma parameter values if they are trainable.
@@ -428,7 +438,7 @@ def inference_only(loggers, loaders, model, optimizer=None, scheduler=None):
     cur_epoch = 0
     start_time = time.perf_counter()
 
-    for i in range(0, num_splits):
+    for i in range(1, num_splits):
         eval_epoch(loggers[i], loaders[i], model,
                    split=split_names[i])
         perf[i].append(loggers[i].write_epoch(cur_epoch))

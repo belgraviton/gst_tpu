@@ -18,7 +18,7 @@ class CustomGNN(torch.nn.Module):
 
     def __init__(self, dim_in, dim_out):
         super().__init__()
-        dim_in = 128
+        dim_in = cfg.gnn.linmapout
         self.encoder = FeatureEncoder(dim_in)
         dim_in = self.encoder.dim_in
 
@@ -38,7 +38,8 @@ class CustomGNN(torch.nn.Module):
         self.gnn_layers = torch.nn.Sequential(*layers)
 
         GNNHead = register.head_dict[cfg.gnn.head]
-        self.post_mp = GNNHead(dim_in=cfg.gnn.dim_inner, dim_out=dim_out)
+        head_in_dim = 2*cfg.gnn.dim_inner if cfg.gnn.concat else cfg.gnn.dim_inner
+        self.post_mp = GNNHead(dim_in=head_in_dim, dim_out=dim_out)
 
     def build_conv_model(self, model_type):
         if model_type == 'gatedgcnconv':
