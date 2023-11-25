@@ -314,7 +314,7 @@ if __name__ == '__main__':
         logging.info('Num parameters: %s', cfg.params)
         # eval_epoch(loggers[0], loaders[0], model, run_dir=cfg.run_dir, split='train')
         eval_epoch(loggers[2], loaders[2], model, run_dir=cfg.run_dir, split='test', gnn_concat=cfg.gnn.concat)
-        # eval_epoch(loggers[1], loaders[1], model, run_dir=cfg.run_dir, split='val', gnn_concat=cfg.gnn.concat)
+        eval_epoch(loggers[1], loaders[1], model, run_dir=cfg.run_dir, split='val', gnn_concat=cfg.gnn.concat)
         
         
         

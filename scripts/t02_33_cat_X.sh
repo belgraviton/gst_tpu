@@ -1,0 +1,1 @@
+python main_tpugraphs.py --cfg configs/tpugraphs3wb.yaml dataset.name TPUGraphs dataset.format PyG-TPUGraphs-xla-all name t02_33_cat_bs16e1k_X optim.max_epoch 1000 train.batch_size 32 gnn.dropout 0.0 gnn.concat True
